@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>我的证照</title>
+    <style>
+      .imgSrc{
+        width: 700px;
+      }
+      .container{
+        width: 100%;
+      }
+      .pop{
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      #page-id1{
+          width: 100%;
+      }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="pop"></div>
+</div>
+<!-- <div>
+  <img class="imgSrc" src="" alt="">
+</div>
+<div class="selectDemo">
+  <div class="selectBox">
+      <label class="selectBtn">
+          请选择图片或者pdf
+          <input type="file" multiple accept="image/*, .pdf" class="selectIpt"/>
+      </label>
+  </div>
+  <div class="previewBox">
+      <ul class="previewList"></ul>
+  </div>
+</div> -->
+<!-- 引入样式文件 -->
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/vant@2.9/lib/index.css"
+/>
+
+<!-- 引入 Vue 和 Vant 的 JS 文件 -->
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vant@2.9/lib/vant.min.js"></script>
+<script type="text/javascript" src="http://www.jszwfw.gov.cn/jmopen/jssdk/index.js"></script>
+<script type="text/javascript " src="//cdn.jsdelivr.net/npm/eruda "></script>
+<script>
+    eruda.init();
+</script>
+<script src="jquery-2.1.4.js"></script>
+<script src="pdf.js"></script>
+<script src="pdf.worker.js"></script>
+<script src="./aes.js"></script>
+<script>
+    var baseUrl='1'
+    // var $$ = (el) => document.querySelector(el);
+    // $$('.selectIpt').addEventListener('change', handleFiles);
+    function handleFiles () {
+        const files = this.files;
+        for (let i = 0, len = files.length; i < len; i ++) {
+            handleImageFile(files[i]);
+        }
+    }
+    function handleImageFile (file) {
+        console.log(file)
+        // 使用FileReader来处理
+        const fileType = file.type;
+        if (!fileType) {
+            return;
+        }
+        const reader = new FileReader ();
+        reader.addEventListener ('load', (e) => {
+            let imgUrl = e.target.result;
+            if (/^image/.test(fileType)) {
+            $('.imgSrc').attr('src',imgUrl)
+            }
+            if (fileType === 'application/pdf') {
+            let url = imgUrl.split('base64,')[1]
+            showPdfFile(url,'.pop','.container')
+            }
+        });
+        reader.readAsDataURL(file);
+    }
+
+    /*将请求来的base64编码的pdf文件，替换多余的空格和换行（为了兼容其他浏览器）
+    * 再使用浏览器自带的atob()的方式解析
+    * */
+    /*转化编码格式*/
+    function converData(data) {
+        data = data.replace(/[\n\r]/g, '');
+        var raw = window.atob(data);
+        var rawLength = raw.length;
+        var array = new Uint8Array(new ArrayBuffer(rawLength));
+        for (var i = 0; i < rawLength; i++) {
+            array[i] = raw.charCodeAt(i)
+        }
+        return array
+    }
+ 
+    /*将解码后的值传给PDFJS.getDocument(),交给pdf.js处理*/
+    function showPdfFile(data,eleCanvas,eleWidth) {
+        console.log(data)
+        var url = converData(data);
+        console.log(url)
+        $('.container').show();
+        $(eleCanvas).empty();
+        PDFJS.getDocument(url).then(function getPdfHelloWorld(pdf) {
+            pages = pdf.numPages;
+            for (var i = 1; i <= pdf.numPages; i++) {
+                var id = 'page-id' + i;
+                $(eleCanvas).append('<canvas id="' + id + '"></canvas>');
+                showAll(url,i, id,eleWidth)
+            }
+        })
+    }
+ 
+    function showAll(url,page, id, ele) {
+        PDFJS.getDocument(url).then(function getPdfHelloWorld(pdf) {
+            pdf.getPage(page).then(function getPageHelloWorld(page) {
+                let scale = 1.0, //默认1：1还原pdf的宽高
+                    viewport = page.getViewport(scale),
+                    canvas = document.getElementById(id);
+                    context = canvas.getContext('2d'); 
+                //可以传元素取值设置
+                let width = document.querySelector(ele).offsetWidth
+                //若pdf本身的尺寸大于页面展示的最大宽度，宽度=最大宽度，高度按比例缩放
+                viewport =  viewport.width > width ? page.getViewport(width/viewport.width) : viewport
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                let renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                }
+                page.render(renderContext)
+            })
+        })
+    }
+    const vm =new Vue({
+        el:"#app",
+        data () {
+            return {
+                idCard: '',
+                initArr:[],
+                initCodearr:[],//初始化授权码
+            }
+        },
+        created () {
+          this.init()  
+        },
+        methods: {
+            init() {
+                let _this = this
+                let jmopenurl = "http://www.jszwfw.gov.cn/jmopen/interfaces/";
+                function verifyToken(token) {
+                    var data1 = {
+                        key: '7dd12acd7af24218bf1111b50db83714',
+                        secret: 'ec789fcae9fed18abbf7824e955f0f44',
+                        token: token
+                    };
+                    // console.log(token)
+                    lightAppJssdk.request.request({
+                        url: jmopenurl + "UserAuth/verifyToken.do",
+                        data: data1,
+                        header: '',
+                        success: function (data) {
+                            if (data.result == "true") {
+                                var userdetail = data.userdetail;
+                                var user = JSON.parse(userdetail); //  用户信息
+                                _this.idCard = user.cardid
+                                // 320105196308211410
+                                let key = CryptoJS.enc.Utf8.parse("31590648179283tn")
+                                let JMid = _this.aesEncode('320107199407133426', key)
+                                _this.initdetails(JMid)
+                                console.log(_this.idCard)
+                            } else {
+                                alert("获取token失败");
+                            }
+
+                        },
+                        fail: function (data) {
+                            alert("获取用户信息失败");
+                        }
+                    });
+                }
+
+                function verifyTicket(ticket) {
+                    var data1 = {
+                        key: '7dd12acd7af24218bf1111b50db83714',
+                        secret: 'ec789fcae9fed18abbf7824e955f0f44',
+                        ticket: ticket
+                    };
+                    lightAppJssdk.request.request({
+                        url: jmopenurl + "UserAuth/verifyTicket.do",
+                        data: data1,
+                        header: '',
+                        success: function (data) {
+                            if (data.result == "true") {
+                                // console.log(data.token);
+                                verifyToken(data.token);
+                            } else {
+                                //return "";
+                                alert(data.errormsg);
+                            }
+
+                        },
+                        fail: function (data) {
+                            //return "";
+                            alert("获取令牌失败");
+                        }
+                    });
+                }
+                lightAppJssdk.user.getTicket({
+                    success: function (data) {
+                        if (data == "未登录") {
+                            lightAppJssdk.user.loginapp({
+                                success: function (res) { //成功回调
+                                    res = JSON.parse(res);
+                                    if (res.result == true || res.result == "true") {
+                                        lightAppJssdk.user.getTicket({
+                                            success: function (data) { //成功回调
+                                                data = JSON.parse(data);
+                                                data.ticket; //ticket
+                                                console.log(data.ticket);
+                                                verifyTicket(data.ticket)
+                                            },
+                                            fail: function (data) { //错误返回
+                                                lightAppJssdk.notification.alert({
+                                                    message: '获取用户信息失败，请稍后重试',
+                                                    title: "提示",
+                                                    buttonName: "确认"
+                                                });
+                                            }
+                                        });
+                                    }
+
+                                },
+                                fail: function (data) { }
+                            });
+                        } else {
+                            var obj = JSON.parse(data);
+                            verifyTicket(obj.ticket);
+                        }
+                    },
+                    fail: function (data) { //错误返回
+                        alert("用户信息失败")
+                        lightAppJssdk.notification.alert({
+                            message: '获取用户信息失败，请稍后重试',
+                            title: "提示",
+                            buttonName: "确认"
+                        });
+                    }
+                });
+            },
+            // 初始化证照数据
+            initdetails(id) {
+                let _this=this
+                $.ajax({
+                    async: false,//同步，异步
+                    url: `http://www.jszwfw.gov.cn/jmportal_serverHD/interfaces/sztquery.do?idcard=${id}`, //请求的服务端地址
+                    data: {
+
+                    },
+                    headers:{
+                        'Content-type': 'application/x-www-form-urlencoded'
+                    },
+                    type: "post",
+                    dataType: "json",
+                    success: function (res) {
+                        //成功之后的处理，返回的数据就是 res
+                        // console.log(res, '数据')
+                        let key = CryptoJS.enc.Utf8.parse("31590648179283tn")
+                        let result=_this.aesDecode(res.data,key)
+                        let obj ={}
+                        obj= JSON.parse(result)
+                        _this.initArr.push(obj)
+                        console.log(_this.initArr[0].auth_datas 
+                        )
+                        console.log(JSON.parse(_this.initArr[0].auth_codes)[1])  
+                        console.log(JSON.parse(_this.initArr[0].auth_codes)[0])
+                        _this.initzzpdf(JSON.parse(_this.initArr[0].auth_codes)[1],id)  
+                    },
+                    error: function () {
+                        alert('error'); //错误的处理
+                    }
+                });
+            },
+             // 请求到证照pdf
+             initzzpdf(authcode,idcard){
+                // data:application/pdf;base64,
+                let _this=this
+                  console.log(authcode,'authcode')
+                  console.log(idcard,'idcard')
+                 $.ajax({
+                    async: false,//同步，异步
+                    url: `http://www.jszwfw.gov.cn/jmportal_serverHD/interfaces/queryCardInfo.do?cardcode=${authcode}&idcard=${idcard}&card_status=2`, //请求的服务端地址
+                    data: {
+
+                    },
+                    type: "post",
+                    dataType: "json",
+                    success: function (res) {
+                        //成功之后的处理，返回的数据就是 res
+                        // alert(JSON.stringify(res))
+                        console.log(res.data.file_data,'数据1')
+                        console.log(res.data.file_name,'数据2')
+                        console.log(baseUrl+'base')
+                        baseUrl= res.data.file_data
+                        console.log(showPdfFile)
+                        showPdfFile(baseUrl,'.pop','.container')
+                        // _this.pdf='data:application/pdf;base64,'+ res.data.file_data
+                        // window.location.href=`data:application/pdf;base64,${res.data.file_data}`
+                        // console.log( _this.pdf)
+                        // window.location.href=`./pdf.html${_this.pdf}`
+                    },
+                    error: function () {
+                        alert('error'); //错误的处理
+                    }
+                });
+             },
+            //解密方法
+            aesDecode(encryptedStr, key) {
+                var encryptedHexStr = CryptoJS.enc.Hex.parse(encryptedStr);
+                var encryptedBase64Str = CryptoJS.enc.Base64.stringify(encryptedHexStr);
+                var decryptedData = CryptoJS.AES.decrypt(encryptedBase64Str, key, {
+                    mode: CryptoJS.mode.ECB,
+                    padding: CryptoJS.pad.Pkcs7
+                });
+                return decryptedData.toString(CryptoJS.enc.Utf8);
+            },
+            //加密方法
+            aesEncode(str, key) {
+                var encryptedData = CryptoJS.AES.encrypt(str, key, {
+                    mode: CryptoJS.mode.ECB,
+                    padding: CryptoJS.pad.Pkcs7
+                });
+                return encryptedData.ciphertext.toString();
+            },
+        },
+    })
+</script>
+</body>
+</html>
